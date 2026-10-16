@@ -30,18 +30,18 @@ internal data class HarnessWebUiState(
 
 internal fun HarnessWebLaunchResult.Failed.message(context: Context, harness: LinuxAgentHarness): String {
     val name = context.getString(harness.titleRes)
-    return context.getString(
-        when (code) {
-            "ROOT_REQUIRED" -> R.string.capability_harness_root_required
-            "BACKGROUND_START_NOT_ALLOWED" -> R.string.capability_background_failed
-            HarnessWebSession.HARNESS_EXITED, "KIMI_EXITED", "PROCESS_EXITED" -> R.string.capability_harness_exited
-            "LINUX_ENVIRONMENT_NOT_READY", "PROFILE_NOT_INSTALLED" -> R.string.capability_harness_not_installed
-            "PROOT_UNAVAILABLE" -> R.string.capability_harness_proot_unavailable
-            "LOGS_UNAVAILABLE" -> R.string.capability_harness_logs_unavailable
-            "URL_TIMEOUT" -> R.string.linux_harness_web_failed_url
-            "BROWSER_UNAVAILABLE" -> R.string.linux_harness_web_failed_browser
-            else -> R.string.linux_harness_web_failed_start
-        },
-        name,
-    )
+    // 只在字符串真的带占位符时传参，避免多余的 format 参数把 lint 引到无关的地方。
+    return when (code) {
+        "ROOT_REQUIRED" -> context.getString(R.string.capability_harness_root_required, name)
+        "BACKGROUND_START_NOT_ALLOWED" -> context.getString(R.string.capability_background_failed)
+        HarnessWebSession.HARNESS_EXITED, "KIMI_EXITED", "PROCESS_EXITED" ->
+            context.getString(R.string.capability_harness_exited, name)
+        "LINUX_ENVIRONMENT_NOT_READY", "PROFILE_NOT_INSTALLED" ->
+            context.getString(R.string.capability_harness_not_installed, name)
+        "PROOT_UNAVAILABLE" -> context.getString(R.string.capability_harness_proot_unavailable)
+        "LOGS_UNAVAILABLE" -> context.getString(R.string.capability_harness_logs_unavailable, name)
+        "URL_TIMEOUT" -> context.getString(R.string.linux_harness_web_failed_url)
+        "BROWSER_UNAVAILABLE" -> context.getString(R.string.linux_harness_web_failed_browser)
+        else -> context.getString(R.string.linux_harness_web_failed_start, name)
+    }
 }
