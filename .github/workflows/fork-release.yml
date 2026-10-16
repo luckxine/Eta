@@ -92,8 +92,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          shopt -s nullglob
-          apks=("$RUNNER_TEMP"/apk/*/*.apk)
+          # archive:false 的 Artifact 下载后直接落在目标目录下，不再多一层子目录；
+          # 用 find 而不是固定通配，避免依赖上传端的目录结构。
+          mapfile -t apks < <(find "$RUNNER_TEMP/apk" -type f -name '*.apk')
           if [[ ${#apks[@]} -eq 0 ]]; then
             echo "::error::未找到 APK。"
             exit 1
