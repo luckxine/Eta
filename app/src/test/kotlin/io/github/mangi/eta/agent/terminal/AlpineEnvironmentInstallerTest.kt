@@ -128,6 +128,21 @@ class AlpineEnvironmentInstallerTest {
             assertTrue(script.contains("--prefix /usr/local"))
             assertTrue(script.contains("registry.npmmirror.com"))
         }
+        // DeepSeek Harness 依赖原生扩展（node-pty 等），Linux arm64 无预编译产物需要现场编译，
+        // 因此两个发行版都要补编译链；安装必须逐级降级到 --ignore-scripts，保证本体仍可用；
+        // 竖屏插件 dsh-web-mobile 跟随本 profile 一起装，装不上只告警不阻断。
+        val harness = LinuxPackageProfiles.DEEPSEEK_HARNESS
+        assertEquals(LinuxPackageProfiles.NODE, harness.dependsOn)
+        assertTrue(harness.spec(LinuxDistribution.DEBIAN).packages.contains("build-essential"))
+        assertTrue(harness.spec(LinuxDistribution.ALPINE).packages.contains("build-base"))
+        LinuxDistribution.entries.forEach { distribution ->
+            assertTrue(harness.spec(distribution).packages.contains("python3"))
+            val script = harness.spec(distribution).setupScript.orEmpty()
+            assertTrue(script.contains("@deepseek-ai/dsh@latest"))
+            assertTrue(script.contains("--prefix /usr/local"))
+            assertTrue(script.contains("--ignore-scripts"))
+            assertTrue(script.contains("dsh plugin --profile web add dsh-web-mobile"))
+        }
         LinuxDistribution.entries.forEach { distribution ->
             assertTrue(LinuxPackageProfiles.SSH.spec(distribution).packages.isNotEmpty())
         }

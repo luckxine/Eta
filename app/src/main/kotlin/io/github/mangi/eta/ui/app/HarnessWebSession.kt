@@ -7,8 +7,12 @@ import io.github.mangi.eta.agent.terminal.LinuxExecutionBackend
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import kotlinx.coroutines.delay
 
-/** Kimi 启动和复用的事务边界：只有本次创建且未打开浏览器的任务会被回收。 */
-internal class KimiWebSession(
+/**
+ * Harness 启动和复用的事务边界：只有本次创建且未打开浏览器的任务会被回收，
+ * 复用的既有任务在失败时保持原样，避免把用户已经跑起来的实例关掉。
+ */
+internal class HarnessWebSession(
+    private val harness: LinuxAgentHarness,
     private val tasks: Tasks,
     private val openUrl: (String) -> Boolean,
     private val waitAttempts: Int = 30,
@@ -21,40 +25,42 @@ internal class KimiWebSession(
         fun stop(id: String)
     }
 
-    suspend fun launch(environment: TerminalEnvironment, identity: String, backend: LinuxExecutionBackend): KimiWebLaunchResult {
+    suspend fun launch(
+        environment: TerminalEnvironment,
+        identity: String,
+        backend: LinuxExecutionBackend,
+    ): HarnessWebLaunchResult {
         var createdTaskId: String? = null
         var opened = false
         try {
             val existing = tasks.list().firstOrNull {
                 it.running && it.task.environment == environment && it.task.identity == identity &&
-                    it.task.backend == backend && it.task.command.trim() in setOf(COMMAND, "kimi web")
+                    it.task.backend == backend && harness.matchesCommand(it.task.command)
             }
             val taskId = existing?.task?.id ?: when (val started = tasks.start(environment, identity)) {
                 is DaemonStartResult.Started -> started.task.id.also { createdTaskId = it }
-                is DaemonStartResult.Failed -> return KimiWebLaunchResult.Failed(started.code)
+                is DaemonStartResult.Failed -> return HarnessWebLaunchResult.Failed(started.code)
             }
             repeat(waitAttempts) {
                 val status = tasks.list().firstOrNull { it.task.id == taskId }
-                if (status == null || !status.running) return KimiWebLaunchResult.Failed("KIMI_EXITED")
+                if (status == null || !status.running) return HarnessWebLaunchResult.Failed(HARNESS_EXITED)
                 val logs = tasks.logs(taskId)
-                if (!logs.ok) return KimiWebLaunchResult.Failed(logs.code.ifBlank { "LOGS_UNAVAILABLE" })
-                val url = addressFromLogs(logs.text)
+                if (!logs.ok) return HarnessWebLaunchResult.Failed(logs.code.ifBlank { "LOGS_UNAVAILABLE" })
+                val url = harness.webAddress(logs.text)
                 if (url != null) {
                     opened = openUrl(url)
-                    return if (opened) KimiWebLaunchResult.Opened(url) else KimiWebLaunchResult.Failed("BROWSER_UNAVAILABLE")
+                    return if (opened) HarnessWebLaunchResult.Opened(url) else HarnessWebLaunchResult.Failed("BROWSER_UNAVAILABLE")
                 }
                 delay(waitIntervalMs)
             }
-            return KimiWebLaunchResult.Failed("URL_TIMEOUT")
+            return HarnessWebLaunchResult.Failed("URL_TIMEOUT")
         } finally {
             if (!opened) createdTaskId?.let(tasks::stop)
         }
     }
 
     companion object {
-        const val COMMAND = "kimi web --no-open"
-        fun addressFromLogs(text: String): String? = WEB_URL_REGEX.find(text)?.value
-        // token 字符集收紧到 URL safe，避免把日志里的 ANSI 序列尾巴吃进来。
-        private val WEB_URL_REGEX = Regex("""http://127\.0\.0\.1:\d+/#token=[A-Za-z0-9_-]+""")
+        /** 任务在解析出地址前就退出；历史记录里的 PROCESS_EXITED 仍按同一含义映射。 */
+        const val HARNESS_EXITED = "HARNESS_EXITED"
     }
 }

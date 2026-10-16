@@ -118,7 +118,46 @@ internal object LinuxPackageProfiles {
             LinuxDistribution.DEBIAN to LinuxPackageSpec(setupScript = KIMI_INSTALL_SCRIPT),
         ),
     )
-    val ALL = listOf(PYTHON, NODE, SSH, KIMI)
+
+    /**
+     * DeepSeek Harness（`@deepseek-ai/dsh`）是 DeepSeek 官方的 coding agent harness，同样是
+     * npm 分发的 Node 应用，因此建在 Node profile 之上；它的 Web UI 就是浏览器里的会话界面。
+     * 与 Kimi Code 不同的是它依赖原生扩展（node-pty / koffi），Linux arm64 没有预编译产物，
+     * 需要现场编译，所以先由包管理器补上编译链（Debian build-essential/python3、Alpine
+     * build-base/python3），再按“镜像源 → 官方源 → 关闭生命周期脚本”逐级降级安装，
+     * 最后一次即使原生扩展编不出来也能得到可启动的 dsh。
+     * 手机竖屏布局由网页插件 dsh-web-mobile 提供，跟随本 profile 一起装进 web profile；
+     * 插件装不上时只告警不阻断（如实记录在安装输出里，不假装已适配）。
+     */
+    private const val DSH_INSTALL_SCRIPT =
+        "export DSH_HOME=/root/.dsh\n" +
+            "npm install -g --prefix /usr/local --registry=https://registry.npmmirror.com @deepseek-ai/dsh@latest || " +
+            "npm install -g --prefix /usr/local @deepseek-ai/dsh@latest || " +
+            "{ rm -rf /usr/local/lib/node_modules/@deepseek-ai/dsh && " +
+            "npm install -g --prefix /usr/local --ignore-scripts --registry=https://registry.npmmirror.com @deepseek-ai/dsh@latest; }\n" +
+            "npm install -g --prefix /usr/local --registry=https://registry.npmmirror.com pnpm@10 || " +
+            "npm install -g --prefix /usr/local pnpm@10\n" +
+            "dsh plugin --profile web add dsh-web-mobile --registry=https://registry.npmmirror.com || " +
+            "dsh plugin --profile web add dsh-web-mobile || " +
+            "echo ETA_DSH_MOBILE_PLUGIN_SKIPPED >&2\n"
+
+    val DEEPSEEK_HARNESS = LinuxPackageProfile(
+        id = "deepseek-harness",
+        markerName = AlpineEnvironmentPaths.DEEPSEEK_HARNESS_MARKER,
+        revision = AlpineEnvironmentPaths.DEEPSEEK_HARNESS_REVISION,
+        dependsOn = NODE,
+        specs = mapOf(
+            LinuxDistribution.ALPINE to LinuxPackageSpec(
+                packages = listOf("build-base", "python3"),
+                setupScript = DSH_INSTALL_SCRIPT,
+            ),
+            LinuxDistribution.DEBIAN to LinuxPackageSpec(
+                packages = listOf("build-essential", "python3"),
+                setupScript = DSH_INSTALL_SCRIPT,
+            ),
+        ),
+    )
+    val ALL = listOf(PYTHON, NODE, SSH, DEEPSEEK_HARNESS, KIMI)
 }
 
 internal fun linuxPackageProfileReady(rootfs: File, profile: LinuxPackageProfile): Boolean {
@@ -212,6 +251,7 @@ internal class LinuxPackageProfileInstaller(
             append("set -e\n")
             spec.setupScript?.let { script -> append(script).append('\n') }
             if (profile == LinuxPackageProfiles.KIMI) append("kimi --version >/dev/null\nkimi web --help >/dev/null\n")
+            if (profile == LinuxPackageProfiles.DEEPSEEK_HARNESS) append("dsh --version >/dev/null\n")
             append("cat > /").append(profile.markerName).append(" <<'ETA_PROFILE_EOF'\n")
             append("profile=").append(profile.revision).append('\n')
             append("ETA_PROFILE_EOF\n")

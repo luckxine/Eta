@@ -154,7 +154,7 @@ fun AgentAppRoot(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 RootAccess.refresh(context)
-                appViewModel.refreshKimiWeb()
+                appViewModel.refreshHarnessWeb()
                 permissionHealth.refreshPermissionHealth()
                 agentState.refreshRuntimeResults()
             }
@@ -277,14 +277,14 @@ fun AgentAppRoot(
             onSearchConversations = { query -> agentState.updateSearchQuery(query) },
             onNewConversation = { createConversation() },
             onOpenTerminal = { pushRoute(AppRoute.Terminal) },
-            onLaunchKimiWeb = {
+            onLaunchHarnessWeb = {
                 requestExecutionNotifications()
-                if (appViewModel.kimiWebState.phase != KimiWebPhase.NOT_INSTALLED) {
-                    appViewModel.launchKimiWeb { result ->
-                        if (result is KimiWebLaunchResult.Failed) {
+                if (appViewModel.harnessWebState.phase != HarnessWebPhase.NOT_INSTALLED) {
+                    appViewModel.launchHarnessWeb { result ->
+                        if (result is HarnessWebLaunchResult.Failed) {
                             Toast.makeText(
                                 context,
-                                result.message(context),
+                                result.message(context, appViewModel.selectedHarness),
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
@@ -293,10 +293,11 @@ fun AgentAppRoot(
                     pushRoute(AppRoute.LinuxEnvironment)
                 }
             },
-            kimiWebLabel = appViewModel.kimiWebState.actionLabel(context),
-            canStopKimiWeb = appViewModel.kimiWebState.canStop,
-            onStopKimiWeb = appViewModel::stopKimiWeb,
-            onRefreshKimiWeb = appViewModel::refreshKimiWeb,
+            harnessWebLabel = appViewModel.harnessWebState.actionLabel(context),
+            harnessWebIcon = appViewModel.selectedHarness.iconRes,
+            canStopHarnessWeb = appViewModel.harnessWebState.canStop,
+            onStopHarnessWeb = appViewModel::stopHarnessWeb,
+            onRefreshHarnessWeb = appViewModel::refreshHarnessWeb,
             onOpenBrowser = { pushRoute(AppRoute.Browser) },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onConversationRename = { conversation ->

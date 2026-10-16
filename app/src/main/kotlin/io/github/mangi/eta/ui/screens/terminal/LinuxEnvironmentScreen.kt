@@ -47,8 +47,9 @@ import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
-import io.github.mangi.eta.ui.app.KimiWebLaunchResult
-import io.github.mangi.eta.ui.app.KimiWebLauncher
+import io.github.mangi.eta.ui.app.HarnessWebLaunchResult
+import io.github.mangi.eta.ui.app.HarnessWebLauncher
+import io.github.mangi.eta.ui.app.LinuxAgentHarness
 import io.github.mangi.eta.ui.app.launchForegroundExecution
 import io.github.mangi.eta.ui.app.message
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
@@ -76,6 +77,7 @@ private enum class InstallTarget {
     PYTHON,
     NODE,
     SSH,
+    DEEPSEEK_HARNESS,
     KIMI,
 }
 
@@ -87,6 +89,8 @@ private data class PackageProfileUi(
     @param:StringRes val readyRes: Int,
     @param:StringRes val debianSummaryRes: Int = summaryRes,
     @param:StringRes val debianReadyRes: Int = readyRes,
+    /** 非空表示这是一行 coding harness：装好之后按钮变成启动 / 停止 Web UI。 */
+    val harness: LinuxAgentHarness? = null,
 )
 
 private val packageProfileUis = listOf(
@@ -113,14 +117,22 @@ private val packageProfileUis = listOf(
         summaryRes = R.string.linux_ssh_tools_summary,
         readyRes = R.string.linux_ssh_tools_ready,
     ),
+) + LinuxAgentHarness.entries.map { harness ->
     PackageProfileUi(
-        target = InstallTarget.KIMI,
-        profile = LinuxPackageProfiles.KIMI,
-        titleRes = R.string.linux_kimi_tools,
-        summaryRes = R.string.linux_kimi_tools_summary,
-        readyRes = R.string.linux_kimi_tools_ready,
-    ),
-)
+        target = harness.installTarget(),
+        profile = harness.profile,
+        titleRes = harness.titleRes,
+        summaryRes = harness.summaryRes,
+        readyRes = harness.readyRes,
+        harness = harness,
+    )
+}
+
+/** harness 到本页安装目标的映射；新增 harness 时这里的 when 会因为不再穷尽而编译失败。 */
+private fun LinuxAgentHarness.installTarget(): InstallTarget = when (this) {
+    LinuxAgentHarness.DEEPSEEK_HARNESS -> InstallTarget.DEEPSEEK_HARNESS
+    LinuxAgentHarness.KIMI_CODE -> InstallTarget.KIMI
+}
 
 @Composable
 internal fun LinuxEnvironmentScreen(
@@ -173,10 +185,12 @@ internal fun LinuxEnvironmentScreen(
         mutableStateOf(apkAnalysisInstaller.isReady())
     }
     var apkAnalysisProgress by remember { mutableStateOf<ApkAnalysisInstallProgress?>(null) }
-    var kimiWebLaunching by remember { mutableStateOf(false) }
-    var kimiWebRunning by remember(selectedDistribution, backend) { mutableStateOf(false) }
-    val kimiWebLauncher = remember(appContext) {
-        KimiWebLauncher(
+    var harnessWebLaunching by remember { mutableStateOf<LinuxAgentHarness?>(null) }
+    var harnessWebRunning by remember(selectedDistribution, backend) {
+        mutableStateOf(LinuxAgentHarness.entries.associateWith { false })
+    }
+    val harnessWebLauncher = remember(appContext) {
+        HarnessWebLauncher(
             context = appContext,
             daemonSupervisor = DetachedTaskSupervisor(
                 logger = AndroidAgentLogger,
@@ -190,9 +204,11 @@ internal fun LinuxEnvironmentScreen(
             ),
         )
     }
-    LaunchedEffect(selectedDistribution, backend, kimiWebLaunching) {
-        if (!kimiWebLaunching) {
-            kimiWebRunning = kimiWebLauncher.status(selectedDistribution.terminalEnvironment).running
+    LaunchedEffect(selectedDistribution, backend, harnessWebLaunching) {
+        if (harnessWebLaunching == null) {
+            harnessWebRunning = LinuxAgentHarness.entries.associateWith { harness ->
+                harnessWebLauncher.status(selectedDistribution.terminalEnvironment, harness).running
+            }
         }
     }
     val selectedBaseReady = when (selectedDistribution) {
@@ -277,17 +293,20 @@ internal fun LinuxEnvironmentScreen(
         }
     }
 
-    /** Kimi 就绪后按钮变为启动 Web UI：守护任务常驻 kimi web，解析地址后拉起浏览器。 */
-    fun launchKimiWeb() {
-        if (kimiWebLaunching || requiresRoot) return
+    /** harness 就绪后按钮变为启动 Web UI：守护任务常驻该 harness 的 web 命令，解析地址后拉起浏览器。 */
+    fun launchHarnessWeb(harness: LinuxAgentHarness) {
+        if (harnessWebLaunching != null || requiresRoot) return
         requestExecutionNotifications()
-        kimiWebLaunching = true
+        harnessWebLaunching = harness
         resultMessage = null
         coroutineScope.launch {
-            val result = kimiWebLauncher.launch(selectedDistribution.terminalEnvironment)
-            kimiWebLaunching = false
-            if (result is KimiWebLaunchResult.Failed) {
-                resultMessage = result.message(context)
+            // 从 Linux 环境页启动哪个 harness，就把它记成菜单项的默认目标（跨启动保留）。
+            LinuxEnvironmentSettingsRepository.selectHarness(harness.id)
+            val result = harnessWebLauncher.launch(selectedDistribution.terminalEnvironment, harness)
+            harnessWebLaunching = null
+            harnessWebRunning = harnessWebRunning + (harness to (result is HarnessWebLaunchResult.Opened))
+            if (result is HarnessWebLaunchResult.Failed) {
+                resultMessage = result.message(context, harness)
             }
         }
     }
@@ -315,7 +334,7 @@ internal fun LinuxEnvironmentScreen(
                 mode = backend.displayName(),
                 summary = when {
                     requiresRoot -> stringResource(R.string.capability_linux_root_lost)
-                    kimiWebLaunching -> stringResource(R.string.linux_kimi_web_starting)
+                    harnessWebLaunching != null -> stringResource(R.string.linux_harness_web_starting)
                     busyTarget != null -> activeProgress ?: stringResource(R.string.linux_installing)
                     selectedToolsReady -> stringResource(R.string.linux_environment_tools_ready)
                     selectedBaseReady -> stringResource(R.string.linux_environment_base_ready)
@@ -327,7 +346,7 @@ internal fun LinuxEnvironmentScreen(
                         },
                     )
                 },
-                busy = busyTarget != null || kimiWebLaunching,
+                busy = busyTarget != null || harnessWebLaunching != null,
                 message = resultMessage,
                 actionText = when {
                     requiresRoot -> stringResource(R.string.capability_enhancements)
@@ -336,7 +355,7 @@ internal fun LinuxEnvironmentScreen(
                     selectedBaseReady -> stringResource(R.string.linux_install_base_tools)
                     else -> stringResource(R.string.linux_install_base)
                 },
-                actionEnabled = busyTarget == null && !kimiWebLaunching,
+                actionEnabled = busyTarget == null && harnessWebLaunching == null,
                 onAction = {
                     if (requiresRoot) onNavigate(AppRoute.SystemEnhance)
                     else if (selectedBaseReady) installTools() else installBase()
@@ -349,15 +368,15 @@ internal fun LinuxEnvironmentScreen(
                 distribution = selectedDistribution,
                 backend = backend,
                 rootGranted = capabilities.root.isGranted,
-                enabled = busyTarget == null && !kimiWebLaunching,
+                enabled = busyTarget == null && harnessWebLaunching == null,
                 onDistributionSelected = { distribution ->
-                    if (busyTarget == null && !kimiWebLaunching && distribution != selectedDistribution) {
+                    if (busyTarget == null && harnessWebLaunching == null && distribution != selectedDistribution) {
                         resultMessage = null
                         coroutineScope.launch { LinuxEnvironmentSettingsRepository.select(distribution) }
                     }
                 },
                 onBackendSelected = { selectedBackend ->
-                    if (busyTarget == null && !kimiWebLaunching && selectedBackend != backend &&
+                    if (busyTarget == null && harnessWebLaunching == null && selectedBackend != backend &&
                         (selectedBackend == LinuxExecutionBackend.PROOT || capabilities.root.isGranted)
                     ) {
                         resultMessage = null
@@ -409,7 +428,9 @@ internal fun LinuxEnvironmentScreen(
                 ) {
                     packageProfileUis.forEachIndexed { index, profileUi ->
                         val ready = profileReady[profileUi.target] == true
-                        val isKimi = profileUi.target == InstallTarget.KIMI
+                        val harness = profileUi.harness
+                        val harnessRunning = harness != null && harnessWebRunning[harness] == true
+                        val harnessLaunching = harness != null && harnessWebLaunching == harness
                         val summaryRes = if (selectedDistribution == LinuxDistribution.DEBIAN) {
                             profileUi.debianSummaryRes
                         } else {
@@ -431,41 +452,42 @@ internal fun LinuxEnvironmentScreen(
                                 stringResource(summaryRes)
                             },
                             endActions = {
-                                if (isKimi && kimiWebRunning) {
+                                if (harness != null && harnessRunning) {
                                     EtaTextButton(
                                         text = stringResource(R.string.action_stop),
-                                        enabled = !kimiWebLaunching && !requiresRoot,
+                                        enabled = harnessWebLaunching == null && !requiresRoot,
                                         onClick = {
                                             coroutineScope.launch {
-                                                val stopped = kimiWebLauncher.stop(selectedDistribution.terminalEnvironment)
-                                                kimiWebRunning = !stopped
+                                                val stopped = harnessWebLauncher.stop(
+                                                    selectedDistribution.terminalEnvironment,
+                                                    harness,
+                                                )
+                                                harnessWebRunning = harnessWebRunning + (harness to !stopped)
                                             }
                                         },
                                     )
                                 }
                                 EtaTextButton(
                                     text = when {
-                                        isKimi && ready -> stringResource(
-                                            if (kimiWebLaunching) {
-                                                R.string.linux_kimi_web_starting
-                                            } else if (kimiWebRunning) {
-                                                R.string.action_open
-                                            } else {
-                                                R.string.linux_kimi_web_launch
+                                        harness != null && ready -> stringResource(
+                                            when {
+                                                harnessLaunching -> R.string.linux_harness_web_starting
+                                                harnessRunning -> R.string.action_open
+                                                else -> R.string.linux_harness_web_launch
                                             },
                                         )
                                         ready -> stringResource(R.string.linux_installed)
                                         busyTarget == profileUi.target -> stringResource(R.string.linux_installing)
                                         else -> stringResource(R.string.linux_install)
                                     },
-                                    enabled = !requiresRoot && if (isKimi && ready) {
-                                        !kimiWebLaunching && busyTarget == null
+                                    enabled = !requiresRoot && if (harness != null && ready) {
+                                        harnessWebLaunching == null && busyTarget == null
                                     } else {
                                         busyTarget == null && !ready
                                     },
                                     onClick = {
-                                        if (isKimi && ready) {
-                                            launchKimiWeb()
+                                        if (harness != null && ready) {
+                                            launchHarnessWeb(harness)
                                             return@EtaTextButton
                                         }
                                         if (busyTarget != null || ready) return@EtaTextButton

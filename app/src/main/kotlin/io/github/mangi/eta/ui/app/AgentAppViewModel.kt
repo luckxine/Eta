@@ -8,7 +8,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.mangi.eta.agent.terminal.DetachedTaskSupervisor
 import io.github.mangi.eta.agent.terminal.LinuxEnvironmentPaths
-import io.github.mangi.eta.agent.terminal.LinuxPackageProfiles
 import io.github.mangi.eta.agent.terminal.SharedFolderMounts
 import io.github.mangi.eta.agent.terminal.linuxPackageProfileReady
 import io.github.mangi.eta.agent.terminal.terminalEnvironment
@@ -16,6 +15,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -31,7 +31,7 @@ internal class AgentAppViewModel(application: Application) : AndroidViewModel(ap
     private val terminalHost = TerminalSessionHost.get(application)
     val terminalStore = terminalHost.terminal
     val consoleStore = terminalHost.console
-    val kimiWebLauncher = KimiWebLauncher(
+    val harnessWebLauncher = HarnessWebLauncher(
         context = application,
         daemonSupervisor = DetachedTaskSupervisor(
             logger = AndroidAgentLogger,
@@ -45,61 +45,98 @@ internal class AgentAppViewModel(application: Application) : AndroidViewModel(ap
         ),
     )
 
-    var kimiWebState by mutableStateOf(KimiWebUiState())
+    /**
+     * 菜单里“启动 Web UI”指向的 harness。默认是 DeepSeek Harness；
+     * 用户从 Linux 环境页启动过哪个 harness，就把它记成下次的默认，并且跨启动保留。
+     */
+    var selectedHarness by mutableStateOf(
+        LinuxAgentHarness.fromId(LinuxEnvironmentSettingsRepository.currentHarnessId())
+            ?: LinuxAgentHarness.DEFAULT,
+    )
         private set
-    private var kimiWebJob: Job? = null
 
-    fun refreshKimiWeb() {
-        if (kimiWebJob?.isActive == true) return
+    var harnessWebState by mutableStateOf(HarnessWebUiState(harness = selectedHarness))
+        private set
+    private var harnessWebJob: Job? = null
+
+    init {
+        // Linux 环境页可以启动任意一个 harness，选中的那个要能立刻反映到菜单项上。
         viewModelScope.launch {
-            val status = withContext(Dispatchers.IO) {
-                val distribution = LinuxEnvironmentSettingsRepository.current(getApplication())
-                val rootfs = LinuxEnvironmentPaths.rootfsDir(getApplication(), distribution)
-                if (!linuxPackageProfileReady(rootfs, LinuxPackageProfiles.KIMI)) {
-                    KimiWebUiState(KimiWebPhase.NOT_INSTALLED)
-                } else {
-                    val runtime = kimiWebLauncher.status(distribution.terminalEnvironment)
-                    when {
-                        runtime.running -> KimiWebUiState(KimiWebPhase.RUNNING)
-                        runtime.code != null -> KimiWebUiState(KimiWebPhase.FAILED, runtime.code)
-                        kimiWebState.phase == KimiWebPhase.FAILED -> kimiWebState
-                        else -> KimiWebUiState(KimiWebPhase.READY)
-                    }
-                }
+            LinuxEnvironmentSettingsRepository.harnessIdFlow().collect { id ->
+                val harness = LinuxAgentHarness.fromId(id) ?: LinuxAgentHarness.DEFAULT
+                if (selectedHarness == harness) return@collect
+                selectedHarness = harness
+                harnessWebState = HarnessWebUiState(harness = harness)
+                refreshHarnessWeb()
             }
-            if (kimiWebJob?.isActive != true) kimiWebState = status
         }
     }
 
-    fun launchKimiWeb(onFinished: (KimiWebLaunchResult) -> Unit) {
-        if (kimiWebJob?.isActive == true) return
-        kimiWebState = KimiWebUiState(KimiWebPhase.STARTING)
-        kimiWebJob = viewModelScope.launch {
+    fun selectHarness(harness: LinuxAgentHarness) {
+        if (selectedHarness == harness) return
+        selectedHarness = harness
+        harnessWebState = HarnessWebUiState(harness = harness)
+        viewModelScope.launch { LinuxEnvironmentSettingsRepository.selectHarness(harness.id) }
+        refreshHarnessWeb()
+    }
+
+    fun refreshHarnessWeb() {
+        if (harnessWebJob?.isActive == true) return
+        viewModelScope.launch {
+            val harness = selectedHarness
+            val status = withContext(Dispatchers.IO) {
+                val distribution = LinuxEnvironmentSettingsRepository.current(getApplication())
+                val rootfs = LinuxEnvironmentPaths.rootfsDir(getApplication(), distribution)
+                if (!linuxPackageProfileReady(rootfs, harness.profile)) {
+                    HarnessWebUiState(harness, HarnessWebPhase.NOT_INSTALLED)
+                } else {
+                    val runtime = harnessWebLauncher.status(distribution.terminalEnvironment, harness)
+                    when {
+                        runtime.running -> HarnessWebUiState(harness, HarnessWebPhase.RUNNING)
+                        runtime.code != null -> HarnessWebUiState(harness, HarnessWebPhase.FAILED, runtime.code)
+                        harnessWebState.harness == harness && harnessWebState.phase == HarnessWebPhase.FAILED ->
+                            harnessWebState
+                        else -> HarnessWebUiState(harness, HarnessWebPhase.READY)
+                    }
+                }
+            }
+            if (harnessWebJob?.isActive != true) harnessWebState = status
+        }
+    }
+
+    fun launchHarnessWeb(onFinished: (HarnessWebLaunchResult) -> Unit) {
+        if (harnessWebJob?.isActive == true) return
+        harnessWebState = HarnessWebUiState(harness = selectedHarness, phase = HarnessWebPhase.STARTING)
+        val harness = selectedHarness
+        harnessWebJob = viewModelScope.launch {
             val distribution = LinuxEnvironmentSettingsRepository.current(getApplication())
             val result = try {
-                kimiWebLauncher.launch(distribution.terminalEnvironment)
+                harnessWebLauncher.launch(distribution.terminalEnvironment, harness)
             } finally {
-                if (kimiWebState.phase == KimiWebPhase.STARTING) kimiWebState = KimiWebUiState(KimiWebPhase.READY)
+                if (harnessWebState.phase == HarnessWebPhase.STARTING) {
+                    harnessWebState = HarnessWebUiState(harness, HarnessWebPhase.READY)
+                }
             }
-            kimiWebState = when (result) {
-                is KimiWebLaunchResult.Opened -> KimiWebUiState(KimiWebPhase.RUNNING)
-                is KimiWebLaunchResult.Failed -> KimiWebUiState(KimiWebPhase.FAILED, result.code)
+            harnessWebState = when (result) {
+                is HarnessWebLaunchResult.Opened -> HarnessWebUiState(harness, HarnessWebPhase.RUNNING)
+                is HarnessWebLaunchResult.Failed -> HarnessWebUiState(harness, HarnessWebPhase.FAILED, result.code)
             }
             onFinished(result)
         }
     }
 
-    fun stopKimiWeb() {
-        val preparation = kimiWebJob
+    fun stopHarnessWeb() {
+        val preparation = harnessWebJob
         preparation?.cancel()
-        kimiWebJob = viewModelScope.launch {
+        val harness = selectedHarness
+        harnessWebJob = viewModelScope.launch {
             preparation?.join()
             val distribution = LinuxEnvironmentSettingsRepository.current(getApplication())
-            val status = kimiWebLauncher.status(distribution.terminalEnvironment)
+            val status = harnessWebLauncher.status(distribution.terminalEnvironment, harness)
             val stopped = if (status.taskId == null) status.code == null
-                else kimiWebLauncher.stop(distribution.terminalEnvironment)
-            kimiWebState = if (stopped) KimiWebUiState(KimiWebPhase.READY)
-                else KimiWebUiState(KimiWebPhase.FAILED, status.code ?: "STOP_FAILED")
+                else harnessWebLauncher.stop(distribution.terminalEnvironment, harness)
+            harnessWebState = if (stopped) HarnessWebUiState(harness, HarnessWebPhase.READY)
+                else HarnessWebUiState(harness, HarnessWebPhase.FAILED, status.code ?: "STOP_FAILED")
         }
     }
 }

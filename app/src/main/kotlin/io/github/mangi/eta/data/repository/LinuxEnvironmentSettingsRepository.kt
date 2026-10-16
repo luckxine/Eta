@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.onEach
 internal object LinuxEnvironmentSettingsRepository {
     @Volatile
     private var cachedSelection: LinuxDistribution? = null
+    @Volatile
+    private var cachedHarnessId: String? = null
     private val cachedBackends = java.util.concurrent.ConcurrentHashMap<LinuxDistribution, LinuxExecutionBackend>()
 
     fun backend(context: Context, distribution: LinuxDistribution): LinuxExecutionBackend =
@@ -62,11 +64,22 @@ internal object LinuxEnvironmentSettingsRepository {
             if (selected != null) cachedBackends[distribution] = selected else cachedBackends.remove(distribution)
         }
         cachedSelection = selectedFlow(context.applicationContext).first()
+        cachedHarnessId = SettingsDataStore.linuxHarnessFlow().first()
     }
 
     suspend fun select(distribution: LinuxDistribution) {
         cachedSelection = distribution
         SettingsDataStore.setLinuxDistribution(distribution.wireName)
+    }
+
+    fun harnessIdFlow(): Flow<String?> = SettingsDataStore.linuxHarnessFlow()
+
+    /** 当前选中的 coding agent harness 的 id；这里只持 id，harness 语义留在界面层。 */
+    fun currentHarnessId(): String? = cachedHarnessId
+
+    suspend fun selectHarness(id: String) {
+        cachedHarnessId = id
+        SettingsDataStore.setLinuxHarness(id)
     }
 
     private fun decode(value: String?): LinuxDistribution? =

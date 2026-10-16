@@ -87,11 +87,12 @@ internal fun AgentAppShell(
     onSearchConversations: (String) -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
-    onLaunchKimiWeb: () -> Unit,
-    kimiWebLabel: String,
-    canStopKimiWeb: Boolean,
-    onStopKimiWeb: () -> Unit,
-    onRefreshKimiWeb: () -> Unit,
+    onLaunchHarnessWeb: () -> Unit,
+    harnessWebLabel: String,
+    harnessWebIcon: Int,
+    canStopHarnessWeb: Boolean,
+    onStopHarnessWeb: () -> Unit,
+    onRefreshHarnessWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -128,11 +129,12 @@ internal fun AgentAppShell(
                             onOpenConversationPane = onOpenConversationPane,
                             onNewConversation = onNewConversation,
                             onOpenTerminal = onOpenTerminal,
-                            onLaunchKimiWeb = onLaunchKimiWeb,
-                            kimiWebLabel = kimiWebLabel,
-                            canStopKimiWeb = canStopKimiWeb,
-                            onStopKimiWeb = onStopKimiWeb,
-                            onRefreshKimiWeb = onRefreshKimiWeb,
+                            onLaunchHarnessWeb = onLaunchHarnessWeb,
+                            harnessWebLabel = harnessWebLabel,
+                            harnessWebIcon = harnessWebIcon,
+                            canStopHarnessWeb = canStopHarnessWeb,
+                            onStopHarnessWeb = onStopHarnessWeb,
+                            onRefreshHarnessWeb = onRefreshHarnessWeb,
                             onOpenBrowser = onOpenBrowser,
                             homeCharacter = homeCharacter,
                             onOpenCharacter = onOpenCharacter,
@@ -189,11 +191,12 @@ private fun AgentTopBar(
     onOpenConversationPane: () -> Unit,
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
-    onLaunchKimiWeb: () -> Unit,
-    kimiWebLabel: String,
-    canStopKimiWeb: Boolean,
-    onStopKimiWeb: () -> Unit,
-    onRefreshKimiWeb: () -> Unit,
+    onLaunchHarnessWeb: () -> Unit,
+    harnessWebLabel: String,
+    harnessWebIcon: Int,
+    canStopHarnessWeb: Boolean,
+    onStopHarnessWeb: () -> Unit,
+    onRefreshHarnessWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
     homeCharacter: RoleplayChatUi?,
     onOpenCharacter: () -> Unit,
@@ -224,11 +227,12 @@ private fun AgentTopBar(
             TopBarOverflowMenu(
                 onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
-                onLaunchKimiWeb = onLaunchKimiWeb,
-                kimiWebLabel = kimiWebLabel,
-                canStopKimiWeb = canStopKimiWeb,
-                onStopKimiWeb = onStopKimiWeb,
-                onRefreshKimiWeb = onRefreshKimiWeb,
+                onLaunchHarnessWeb = onLaunchHarnessWeb,
+                harnessWebLabel = harnessWebLabel,
+                harnessWebIcon = harnessWebIcon,
+                canStopHarnessWeb = canStopHarnessWeb,
+                onStopHarnessWeb = onStopHarnessWeb,
+                onRefreshHarnessWeb = onRefreshHarnessWeb,
                 onOpenBrowser = onOpenBrowser,
             )
         }
@@ -266,16 +270,17 @@ private val TopBarMenuIconSize = 20.dp
 private fun TopBarOverflowMenu(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
-    onLaunchKimiWeb: () -> Unit,
-    kimiWebLabel: String,
-    canStopKimiWeb: Boolean,
-    onStopKimiWeb: () -> Unit,
-    onRefreshKimiWeb: () -> Unit,
+    onLaunchHarnessWeb: () -> Unit,
+    harnessWebLabel: String,
+    harnessWebIcon: Int,
+    canStopHarnessWeb: Boolean,
+    onStopHarnessWeb: () -> Unit,
+    onRefreshHarnessWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { onRefreshKimiWeb(); showMenu = true }) {
+        IconButton(onClick = { onRefreshHarnessWeb(); showMenu = true }) {
             Icon(
                 imageVector = Icons.Outlined.MoreHoriz,
                 modifier = Modifier.size(24.dp),
@@ -289,16 +294,17 @@ private fun TopBarOverflowMenu(
         ) {
             val newConversationText = stringResource(R.string.action_new_conversation)
             val openTerminalText = stringResource(R.string.action_open_terminal)
-            val launchKimiWebText = kimiWebLabel
-            val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
+            val launchHarnessWebText = harnessWebLabel
+            val stopHarnessWebText = stringResource(R.string.capability_harness_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
-                launchKimiWebText,
+                launchHarnessWebText,
+                harnessWebIcon,
                 openBrowserText,
-                stopKimiWebText,
-                canStopKimiWeb,
+                stopHarnessWebText,
+                canStopHarnessWeb,
             ) {
                 listOf(
                     DropdownItem(
@@ -322,10 +328,10 @@ private fun TopBarOverflowMenu(
                         },
                     ),
                     DropdownItem(
-                        text = launchKimiWebText,
+                        text = launchHarnessWebText,
                         icon = { modifier ->
                             Icon(
-                                painter = painterResource(R.drawable.ic_kimi_code),
+                                painter = painterResource(harnessWebIcon),
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
@@ -341,10 +347,10 @@ private fun TopBarOverflowMenu(
                             )
                         },
                     ),
-                ) + if (canStopKimiWeb) {
+                ) + if (canStopHarnessWeb) {
                     listOf(
                         DropdownItem(
-                            text = stopKimiWebText,
+                            text = stopHarnessWebText,
                             icon = { modifier ->
                                 Icon(
                                     imageVector = Icons.Rounded.Stop,
@@ -370,9 +376,9 @@ private fun TopBarOverflowMenu(
                             when (index) {
                                 0 -> onNewConversation()
                                 1 -> onOpenTerminal()
-                                2 -> onLaunchKimiWeb()
+                                2 -> onLaunchHarnessWeb()
                                 3 -> onOpenBrowser()
-                                4 -> onStopKimiWeb()
+                                4 -> onStopHarnessWeb()
                             }
                         },
                     )
