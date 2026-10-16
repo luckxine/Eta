@@ -265,6 +265,10 @@ APK 分析在 Alpine 与 Debian 中都作为可选档案显示。JADX、Apktool�
 
 Kimi 使用 `kimi web --no-open`，按发行版及后端复用活跃实例。启动失败或取消只清理本次新建的进程；复用实例保留。服务使用 `START_NOT_STICKY`，系统强停或重启后不自动重放命令。通知授权被拒绝不会直接阻止合法前台启动，但系统后台启动限制与厂商进程回收策略仍然生效。
 
+Linux 环境里的 Coding Agent Harness 在 App 侧是一张表（`LinuxAgentHarness`）：每项只声明安装 profile、web 命令、启动日志里的地址格式和预注入凭据的 provider 引用，安装、就绪判定、启动、复用、停止的流程完全共用，增加一个 harness 不改流程代码。默认项是 DeepSeek Harness，运行 `NARB_DISABLE_NATIVE_CACHE=1 DSH_HOME=/root/.dsh dsh web --no-open --host 127.0.0.1 --port 0`：`--port 0` 避开上一次未清干净的端口，`NARB_DISABLE_NATIVE_CACHE=1` 是因为它的原生扩展缓存在 PRoot 的 `--link2symlink` 下首次会悬空。地址解析同时接受 `/?token=` 与 `/#token=`，两种 harness 的启动行都能匹配。复用判定按 harness 分别进行，不会把另一个 harness 的实例当成自己的。
+
+预注入凭据只写 `$DSH_HOME/.credentials.yaml`，且只在文档不存在时写一次：用户之后在 harness 设置页保存的密钥落在同一份文档上，可以覆盖预注入值，而 Eta 不会把用户轮换过的密钥改回去。刻意不用环境变量注入——dsh 的凭据解析把进程环境当作优先级最高的只读层，用环境变量预注入会让它的设置页再也改不动密钥。
+
 ## 上下文与续接
 
 App 在发起请求前已经把当前用户消息写入会话 history，因此 Runtime 返回的 transcript 必须保持“增量”语义。已完成 run 的补充请求由 `AgentContinuationBuilder` 使用以下顺序重建上下文：

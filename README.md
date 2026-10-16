@@ -73,12 +73,14 @@ Eta 的终端可以由 Agent 调用，也可以由你直接操作。多个会话
 Agent 的文件与命令共用本次运行的默认身份和工作区：已确认 Root 授权时默认直接使用 Root，否则使用 App 身份；两者使用同一个私有工作区，身份变化不移动文件。工作区页面支持读取、导出 Root 生成的文件；需要普通身份时显式传 identity=user。普通 Shell 身份不等同于 ADB Shell。Linux 文件路径在所选环境内部解析，例如 `/workspace`，不使用 Android 宿主的 rootfs 路径。单次写入及精确编辑限制为 512 KiB；续读、分页、版本检查与不同后端的写入保证见 [文件工具合同](docs/AGENT_RUNTIME.md#结构化文件工具)。
 
 - **Linux 环境**：可选 Alpine 或 Debian，普通设备使用 PRoot，Root 设备还可选择 chroot。两种后端独立安装，不自动迁移数据；PRoot 中的模拟 root 不提供 Android 系统权限。
-- **开发工具**：Python、Node.js、SSH、APK 分析与 Kimi Code 按需安装。
+- **开发工具**：Python、Node.js、SSH、APK 分析与 Coding Agent Harness 按需安装。
 - **文件管理**：私有工作区支持导入、导出；已授权的 Android 目录可共享到 Linux 的 `/workspace/mounts/`，也可在 App 内浏览 Linux 文件。通过选择器导入的文件是工作区副本，修改副本不会自动写回来源；文件工具只接受文件系统路径，不直接写回 `content://` 文档。
 
-Eta 本体可以读取项目、修改代码、运行命令并验证结果。如果想在手机上持续进行编程工作，[Kimi Code](https://github.com/MoonshotAI/kimi-code) 的 **Kimi Web** 提供了更适合移动端的 Web UI，可以在浏览器中持续对话、查看代码修改与执行结果，享受完整的 Coding Agent 工作体验，随时随地 Vibe Coding。
+Eta 本体可以读取项目、修改代码、运行命令并验证结果。想留在终端里用 TUI，也可以用浏览器里的 Web UI。Linux 环境里的 Coding Agent Harness 是可插拔的，默认 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）：它自带模型设置页，DeepSeek 之外的兼容服务也能在界面里直接添加，不用改配置文件。
 
-在 Eta 中安装 Linux、Node.js 与 Kimi Code 后，即可从首页一键启动 Kimi Web，也可以在终端运行 `kimi`。Kimi 使用独立的模型配置与会话，需单独完成登录或配置；离开页面后可返回继续使用，也可从 Eta 主动停止。
+在 Eta 中安装 Linux、Node.js 与 DeepSeek Harness 后，即可从首页一键启动它的 Web UI，也可以在终端运行 `dsh`（开机即读 Eta 里已填的 DeepSeek API Key，之后可在 dsh 设置页改成别的服务）；手机竖屏布局由随包装好的 `dsh-web-mobile` 插件提供。离开页面后可返回继续使用，也可从 Eta 主动停止。
+
+[Kimi Code](https://github.com/MoonshotAI/kimi-code) 的 **Kimi Web** 同样作为可选 harness 保留：在 Linux 环境页安装 Kimi Code，装好后同一张卡片上就能启动 Kimi Web；它使用自己的模型配置与会话，需单独登录或配置。两个 harness 互不影响，最后一次启动哪个，首页菜单就默认指向哪个。
 
 ## 模型与 BYOK
 

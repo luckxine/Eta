@@ -121,11 +121,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Kimi Code 图标
+## Coding Agent Harness 图标
 
-首页“启动 Kimi Web”入口的 `ic_kimi_code.xml` 转换自 Moonshot AI
+首页“启动 Web UI”入口的 `ic_kimi_code.xml` 转换自 Moonshot AI
 [Kimi Code](https://github.com/MoonshotAI/kimi-code/blob/d1ca65e1de189617e9edbc54010e62d472a1de3d/apps/vscode/resources/kimi-icon.svg)
 的单色侧栏图标。转换仅适配 Android VectorDrawable 格式，保留原始几何与比例。
+
+同一入口在选中 DeepSeek Harness 时使用 `ic_deepseek_harness.xml`：该图标为 Eta 自绘（一只抽象鲸形轮廓），
+不是 DeepSeek 官方标识的派生作品，也不代表 DeepSeek 对 Eta 的赞助或认可。
 
 Kimi Code 使用 MIT License：
 
