@@ -1,5 +1,6 @@
 package io.github.mangi.eta.data.update
 
+import io.github.mangi.eta.BuildConfig
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
@@ -66,6 +67,12 @@ internal object AppUpdateChecker {
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
-    private const val LATEST_RELEASE_URL = "https://api.github.com/repos/Mangi-11/Eta/releases/latest"
     private const val USER_AGENT = "Eta-Update-Checker"
+
+    /**
+     * 更新检查的仓库由构建参数 `eta.updateRepo` 决定（默认上游仓库）。fork 构建指向自己，
+     * 否则用户会拿到上游安装包，而 fork 的改动（默认 harness 等）在这条路径上会静默丢失。
+     */
+    private val LATEST_RELEASE_URL =
+        "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
 }

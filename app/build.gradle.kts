@@ -29,6 +29,14 @@ require(buildMetadata == null || buildMetadata.matches(Regex("[0-9A-Za-z.-]+")))
 }
 val buildMetadataSuffix = buildMetadata?.let { "+$it" }.orEmpty()
 
+// 更新检查读取的 GitHub 仓库，格式 owner/name。默认是上游仓库，fork 构建可以用
+// -Peta.updateRepo=owner/name 指向自己，否则 fork 安装包会把用户引到上游安装包。
+val updateRepo = providers.gradleProperty("eta.updateRepo").orNull?.takeIf { it.isNotBlank() }
+    ?: "Mangi-11/Eta"
+require(updateRepo.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) {
+    "eta.updateRepo 必须是 owner/name 格式"
+}
+
 android {
     namespace = "io.github.mangi.eta"
     compileSdk = 37
@@ -41,6 +49,8 @@ android {
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
         versionCode = 2026101401
         versionName = "3.3.1"
+
+        buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
     }
 
     signingConfigs {
@@ -80,7 +90,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig = false
+        buildConfig = true
         compose = true
     }
 

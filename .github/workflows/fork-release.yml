@@ -1,0 +1,112 @@
+name: Fork Release
+
+# fork 专用发布流程：与上游 android-release.yml 相互独立。
+# 上游流程要求 ETA_RELEASE_* 四个签名 Secrets，且发版标签必须严格等于 v<versionName>；
+# 这里没有签名密钥也能出包，用「标签名后缀」而不是版本名来区分 fork 构建，
+# 因此不需要改 versionName，冲突面最小。
+on:
+  # 标签名与 versionName 一致（v3.3.1），这样 App 内的更新检查不会把自己的包当成新版本反复提示。
+  # 上游 android-release.yml 同样监听 v*，但它要求 ETA_RELEASE_* 签名 Secrets，
+  # 而它在 fork 的 main 上已被本工作流取代（见 README_FORK.md），不会重复构建。
+  push:
+    tags:
+      - "v*"
+      - "dsh-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要附加 APK 的标签（例如 v3.3.1）；留空则只上传 Artifact
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 构建 Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: 配置构建环境
+        uses: ./.github/actions/setup-build
+
+      # 更新检查默认指向上游仓库；fork 构建指向自己，否则会提示用户去装上游包。
+      # 属性只影响这一条请求地址，不影响包名或其他逻辑。
+      - name: 构建 Debug APK
+        run: >-
+          ./gradlew --no-daemon --no-configuration-cache
+          "-Peta.updateRepo=luckxine/Eta"
+          "-Peta.buildMetadata=${GITHUB_SHA::7}"
+          :app:assembleDebug
+
+      - name: 整理 APK
+        id: apk
+        run: |
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/debug/*.apk)
+          if [[ ${#apks[@]} -ne 1 ]]; then
+            echo "::error::Debug APK 数量异常（${#apks[@]}）。"
+            exit 1
+          fi
+          name="Eta-${{ github.event.inputs.tag || github.ref_name }}-debug.apk"
+          cp "${apks[0]}" "$name"
+          echo "path=$name" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.apk.outputs.path }}
+          path: ${{ steps.apk.outputs.path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 附加到 Release
+    needs: [build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: 下载 APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: ${{ runner.temp }}/apk
+
+      # 用真实 Release（非草稿）承载 fork 自建包，因为 fork 的 latest 不会被用户安装到
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          apks=("$RUNNER_TEMP"/apk/*/*.apk)
+          if [[ ${#apks[@]} -eq 0 ]]; then
+            echo "::error::未找到 APK。"
+            exit 1
+          fi
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${apks[@]}" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            # 不传 --latest=false：这是 fork 自己的仓库，latest 就该指向 fork 的自建包，
+            # App 内更新检查因此能在 fork 内正常比较版本。
+            gh release create "$GITHUB_REF_NAME" "${apks[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes "fork 自建构建：Linux 环境的 Coding Agent Harness 中默认使用 DeepSeek Harness（\`dsh\`），Kimi Code 保留为可选。详见 README_FORK.md。"
+          fi
